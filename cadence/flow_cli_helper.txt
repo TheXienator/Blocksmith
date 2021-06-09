@@ -1,0 +1,35 @@
+## Accounts
+
+```
+flow account get f8d6e0586b0a20c7
+```
+
+## Contracts
+
+```
+flow accounts add-contract HelloWorld ./contracts/HelloWorld.cdc
+```
+
+```
+flow accounts remove-contract HelloWorld
+```
+
+## Transactions
+
+```
+flow transactions send ./transactions/HelloWorld/LoadHello.cdc \
+    --args-json '[]' \
+    --signer emulator-account
+```
+
+```
+flow transactions send ./transactions/HelloWorld/CreateHelloLink.cdc \
+    --args-json '[]' \
+    --signer emulator-account
+```
+
+## Scripts
+
+```
+flow scripts execute ./scripts/HelloWorld/HelloScript.cdc --args-json '[{"type": "Address","value": "0xf8d6e0586b0a20c7"}]'
+```

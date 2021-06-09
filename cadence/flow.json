@@ -1,0 +1,49 @@
+{
+	"emulators": {
+		"default": {
+			"port": 3569,
+			"serviceAccount": "emulator-account"
+		}
+	},
+	"contracts": {
+    "HelloWorld": "./contracts/HelloWorld.cdc",
+    "NonFungibleToken": {
+      "source": "./contracts/standard/NonFungibleToken.cdc",
+      "aliases": {
+        "testnet": "0x631e88ae7f1d7c20"
+      }
+    }
+	},
+	"networks": {
+		"emulator": {
+			"host": "127.0.0.1:3569",
+			"chain": "flow-emulator"
+		},
+		"mainnet": {
+			"host": "access.mainnet.nodes.onflow.org:9000",
+			"chain": "flow-mainnet"
+		},
+		"testnet": {
+			"host": "access.devnet.nodes.onflow.org:9000",
+			"chain": "flow-testnet"
+		}
+	},
+	"accounts": {
+		"emulator-account": {
+			"address": "f8d6e0586b0a20c7",
+			"keys": "f28ebd16a94d7e7a18301829383f9b356e7c43dd05fddef202a168b59ea7f2fc",
+			"chain": "flow-emulator"
+		},
+		"testnet-account": { 
+			"fromFile": "./flow.testnet.json" 
+		}
+	},
+	"deployments": {
+		"emulator": {
+			"emulator-account": [
+				"HelloWorld",
+				"NonFungibleToken"
+			]
+		}
+	}
+}
