@@ -14,23 +14,15 @@ transaction(creatorID: UInt32, setName: String) {
     let adminRef: &Blocksmith.Admin
     let currSetID: UInt32
 
-    prepare(acct: AuthAccount) {
-
+    prepare(adminAcct: AuthAccount) {
         // borrow a reference to the Admin resource in storage
-        self.adminRef = acct.borrow<&Blocksmith.Admin>(from: Blocksmith.AdminStoragePath)
+        self.adminRef = adminAcct.borrow<&Blocksmith.Admin>(from: Blocksmith.AdminStoragePath)
             ?? panic("Could not borrow a reference to the Admin resource")
         self.currSetID = Blocksmith.getCreator(creatorID: creatorID)!.nextSetID;
     }
 
     execute {
-        
         // Create a set with the specified name
         self.adminRef.createSet(creatorID: creatorID, name: setName)
-    }
-
-    post {
-        
-        Blocksmith.getSetName(creatorID: creatorID, setID: self.currSetID) == setName:
-          "Could not find the specified set"
     }
 }

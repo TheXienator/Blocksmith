@@ -20,7 +20,6 @@ transaction(recipient: Address, withdrawID: UInt64) {
     let transferToken: @NonFungibleToken.NFT
     
     prepare(acct: AuthAccount) {
-
         // borrow a reference to the owner's collection
         let collectionRef = acct.borrow<&Blocksmith.Collection>(from: Blocksmith.CollectionStoragePath)
             ?? panic("Could not borrow a reference to the stored Creation collection")
@@ -30,11 +29,8 @@ transaction(recipient: Address, withdrawID: UInt64) {
     }
 
     execute {
-        
-        // get the recipient's public account object
+        // get the recipient's public account and collection reference
         let recipient = getAccount(recipient)
-
-        // get the Collection reference for the receiver
         let receiverRef = recipient.getCapability(Blocksmith.CollectionPublicPath).borrow<&{Blocksmith.CreationCollectionPublic}>()!
 
         // deposit the NFT in the receivers collection

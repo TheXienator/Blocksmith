@@ -1,1 +1,4 @@
 flow.testnet.json
+flow.mainnet.json
+built.rlp
+signed.rlp

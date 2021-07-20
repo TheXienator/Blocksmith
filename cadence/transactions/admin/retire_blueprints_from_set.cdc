@@ -14,25 +14,17 @@ transaction(creatorID: UInt32, setID: UInt32, blueprintID: UInt32) {
     // local variable for storing the reference to the admin resource
     let adminRef: &Blocksmith.Admin
 
-    prepare(acct: AuthAccount) {
-
+    prepare(adminAcct: AuthAccount) {
         // borrow a reference to the Admin resource in storage
-        self.adminRef = acct.borrow<&Blocksmith.Admin>(from: Blocksmith.AdminStoragePath)
+        self.adminRef = adminAcct.borrow<&Blocksmith.Admin>(from: Blocksmith.AdminStoragePath)
             ?? panic("No admin resource in storage")
     }
 
     execute {
-
         // borrow a reference to the specified set
         let setRef = self.adminRef.borrowSet(creatorID: creatorID, setID: setID)
 
         // retire the blueprint
         setRef.retireBlueprint(blueprintID: blueprintID)
-    }
-
-    post {
-        
-        self.adminRef.borrowSet(creatorID: creatorID, setID: setID).retired[blueprintID]!: 
-            "blueprint is not retired"
     }
 }

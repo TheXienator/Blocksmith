@@ -7,25 +7,59 @@ flow account get f8d6e0586b0a20c7
 ## Contracts
 
 ```
-flow accounts add-contract HelloWorld ./contracts/HelloWorld.cdc
+flow accounts add-contract Blocksmith ./contracts/Blocksmith.cdc --network testnet --signer testnet-account2
 ```
 
 ```
-flow accounts remove-contract HelloWorld
+flow accounts remove-contract Blocksmith --network testnet --signer testnet-account2
+```
+
+```
+flow accounts update-contract Blocksmith ./contracts/Blocksmith.cdc --network testnet --signer testnet-account2
 ```
 
 ## Transactions
-
-```
-flow transactions send ./transactions/HelloWorld/LoadHello.cdc \
-    --args-json '[]' \
-    --signer emulator-account
-```
-
+#### Send
 ```
 flow transactions send ./transactions/HelloWorld/CreateHelloLink.cdc \
     --args-json '[]' \
     --signer emulator-account
+```
+
+#### Build
+
+Add Creator
+```
+flow transactions build ./transactions/super_admin/create_creator.cdc \
+  --network testnet \
+  --authorizer testnet-account2 \
+  --proposer testnet-account2 \
+  --payer testnet-account2 \
+  --arg "Address:0x49c1e7f4f77e3d02" \
+  --filter payload --save built.rlp
+```
+
+Add Admin
+```
+flow transactions build ./transactions/user/setup_account.cdc \
+  --network testnet \
+  --authorizer testnet-account2 \
+  --proposer testnet-account2 \
+  --payer testnet-account2 \
+  --filter payload --save built.rlp
+```
+
+#### Sign
+```
+flow transactions sign ./built.rlp \
+  --network testnet \
+  --signer testnet-account2 \
+  --filter payload --save signed.rlp
+```
+
+#### Send-signed
+```
+flow transactions send-signed ./signed.rlp --network testnet
 ```
 
 ## Scripts

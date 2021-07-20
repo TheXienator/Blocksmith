@@ -12,9 +12,9 @@ transaction(creatorID: UInt32, setID: UInt32) {
     // local variable for the admin resource
     let adminRef: &Blocksmith.Admin
 
-    prepare(acct: AuthAccount) {
+    prepare(adminAcct: AuthAccount) {
         // borrow a reference to the admin resource
-        self.adminRef = acct.borrow<&Blocksmith.Admin>(from: Blocksmith.AdminStoragePath)
+        self.adminRef = adminAcct.borrow<&Blocksmith.Admin>(from: Blocksmith.AdminStoragePath)
             ?? panic("No admin resource in storage")
     }
 
@@ -24,11 +24,5 @@ transaction(creatorID: UInt32, setID: UInt32) {
 
         // lock the set permanently
         setRef.lock()
-    }
-
-    post {
-        
-        Blocksmith.isSetLocked(creatorID: creatorID, setID: setID)!:
-            "Set did not lock"
     }
 }

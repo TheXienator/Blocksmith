@@ -36,7 +36,7 @@
     and those cases need to be handled by the caller.
 */
 
-import NonFungibleToken from 0x631e88ae7f1d7c20
+import NonFungibleToken from "./standard/NonFungibleToken.cdc"
 
 pub contract Blocksmith: NonFungibleToken {
 
@@ -96,7 +96,6 @@ pub contract Blocksmith: NonFungibleToken {
     pub let CollectionPublicPath: PublicPath
     pub let SuperAdminStoragePath: StoragePath
     pub let AdminStoragePath: StoragePath
-    pub let AdminPublicPath: PublicPath
 
     // The ID that is used to create Blueprints. 
     // Every time a Blueprint is created, blueprintID is assigned 
@@ -116,43 +115,10 @@ pub contract Blocksmith: NonFungibleToken {
     // Mapping from creatorID to Creator struct
     access(self) var creators: {UInt32: Creator}
 
-    // -----------------------------------------------------------------------
-    // Blocksmith initialization function
-    // -----------------------------------------------------------------------
-    //
-    init() {
-        // Set our named paths
-        self.CollectionStoragePath = /storage/BlocksmithCreationCollection
-        self.CollectionPublicPath = /public/BlocksmithCreationCollection
-        self.SuperAdminStoragePath = /storage/BlocksmithSuperAdmin
-        self.AdminStoragePath = /storage/BlocksmithAdmin
-        self.AdminPublicPath = /public/BlocksmithAdmin
-
-        // Initialize contract fields
-        self.creators = {}
-        self.sets <- {}
-        self.totalSupply = 0
-        self.nextCreatorID = 1
-
-        // Uncomment if we need to hard reset during testing
-        // if (self.account.borrow<&Collection>(from: self.CollectionStoragePath) != nil) {
-        //     destroy self.account.load<@Collection>(from: self.CollectionStoragePath)
-        // }
-        // Put a new Collection in storage
-        self.account.save<@Collection>(<- create Collection(), to: self.CollectionStoragePath)
-
-        // Create a public capability for the Collection
-        self.account.link<&{CreationCollectionPublic}>(self.CollectionPublicPath, target: self.CollectionStoragePath)
-
-        // Uncomment if we need to hard reset during testing
-        // if (self.account.borrow<&SuperAdmin>(from: self.SuperAdminStoragePath) != nil) {
-        //     destroy self.account.load<@SuperAdmin>(from: self.SuperAdminStoragePath)
-        // }
-        // Put the SuperAdmin in storage
-        self.account.save<@SuperAdmin>(<- create SuperAdmin(), to: self.SuperAdminStoragePath)
-
-        emit ContractInitialized()
-    }
+    // Mapping from creatorID to their creationMap
+    // creationMap is a mapping of the local creationID to the global NFT id
+    // global NFT is unique across ALL creators
+    access(self) var creatorToGlobalIDMap: {UInt32: {UInt32: UInt64}}
 
     // -----------------------------------------------------------------------
     // Blocksmith creator-level fields.
@@ -164,20 +130,16 @@ pub contract Blocksmith: NonFungibleToken {
         // The unique ID for the Creator
         pub let creatorID: UInt32
 
-        // The unique wallet that is the original owner of all assets
-        // created by this Creator. Will be used the address used
-        // to give original creators a cut of secondary marketplaces.
-        pub let creatorAddress: Address
-
-        // Metadata related to a creator that can be changed at any time
-        pub var creatorMetadata: {String: String}
-
+        // Series that this Set belongs to.
         // Series is a concept that indicates a group of Sets through time.
         pub var currentSeries: UInt32
 
+        // Variable size dictionary of Blueprint structs
+        access(self) var blueprints: {UInt32: Blueprint}
+
         // The ID that is used to create Blueprints. 
-        // Every time a Blueprint is created, blueprintID is assigned to
-        // the new Blueprint's ID and then is incremented by 1.
+        // Every time a Blueprint is created, blueprintID is assigned 
+        // to the new Blueprint's ID and then is incremented by 1.
         pub var nextBlueprintID: UInt32
 
         // The ID that is used to create Sets. Every time a Set is created
@@ -190,14 +152,9 @@ pub contract Blocksmith: NonFungibleToken {
         // have been minted to date. Also used as creation IDs for minting.
         pub var numCreations: UInt32
 
-        // Variable size dictionary of Blueprint structs
-        access(self) var blueprints: {UInt32: Blueprint}
-
-        init(creatorAddress: Address) {
+        init() {
             // Initialize contract fields
             self.creatorID = Blocksmith.nextCreatorID
-            self.creatorMetadata = {}
-            self.creatorAddress = creatorAddress
             self.currentSeries = 0
             self.blueprints = {}
             self.nextBlueprintID = 1
@@ -209,15 +166,9 @@ pub contract Blocksmith: NonFungibleToken {
 
             // Setup global resources for the new creator
             Blocksmith.sets[self.creatorID] <-! {}
+            Blocksmith.creatorToGlobalIDMap[self.creatorID] = {}
 
             emit CreatorCreated(creatorID: self.creatorID)
-        }
-
-        // method an admin can use at any time to update creator metadata
-        pub fun updateMetadata(updatedData: {String: String}) {
-            for key in updatedData.keys {
-                self.creatorMetadata[key] = updatedData[key]
-            }
         }
 
         // Helper functions for creations
@@ -270,21 +221,13 @@ pub contract Blocksmith: NonFungibleToken {
             return self.blueprints.values
         }
 
-        // getBlueprint returns an optional which is either the blueprint
-        // with that id for the creator or empty if it doesn't exist
-        //
-        // Returns: An option the blueprint with that ID
-        pub fun getBlueprint(blueprintID: UInt32): Blocksmith.Blueprint? {
-            return self.blueprints[blueprintID]
-        }
-
         // getBlueprintMetaData returns all the metadata associated with a specific Blueprint
         // 
         // Parameters: blueprintID: The id of the Blueprint that is being searched
         //
         // Returns: The metadata as a String to String mapping optional
         pub fun getBlueprintMetaData(blueprintID: UInt32): {String: String}? {
-            return self.blueprints[blueprintID]?.metadata
+            return  self.blueprints[blueprintID]?.metadata
         }
 
         // getBlueprintMetaDataByField returns the metadata associated with a 
@@ -329,29 +272,32 @@ pub contract Blocksmith: NonFungibleToken {
         // The unique ID for Blueprints created by this creator
         pub let blueprintID: UInt32
 
-        // Count of how many Creations have been made from this Blueprint
+        // Stores all the metadata about the blueprint as a string mapping
+        // This is not the long term way NFT metadata will be stored. It's a temporary
+        // construct while we figure out a better way to do metadata.
+        //
+        pub let metadata: {String: String}
+
         pub var creationCount: UInt32
 
-        // Count of how many Creations can ever be made of this Blueprint
         pub let creationLimit: UInt32
-
-        // Stores all the metadata about the blueprint as a string mapping
-        pub let metadata: {String: String}
 
         init(creatorID: UInt32, metadata: {String: String}, creationLimit: UInt32?) {
             pre {
                 Blocksmith.creators[creatorID] != nil: "Creator doesn't exist"
                 metadata.length != 0: "New Blueprint metadata cannot be empty"
             }
+            let creator = Blocksmith.creators[creatorID]!
+
             self.creatorID = creatorID
-            self.blueprintID = Blocksmith.creators[creatorID]!.nextBlueprintID
+            self.blueprintID = creator.nextBlueprintID
             self.metadata = metadata
 
             self.creationCount = UInt32(0)
             self.creationLimit = creationLimit ?? UInt32.max
 
             // Increment the ID so that it isn't used again
-            Blocksmith.creators[creatorID]!.incrementNextBlueprintID()
+            creator.incrementNextBlueprintID()
 
             emit BlueprintCreated(creatorID: creatorID, blueprintID: self.blueprintID, metadata: metadata)
         }
@@ -392,16 +338,7 @@ pub contract Blocksmith: NonFungibleToken {
 
         // Series that this Set belongs to.
         pub let series: UInt32
-
-        // Indicates if the Set is currently locked.
-        // A Set starts unlocked and Blueprints are allowed to be added to it.
-        // When a Set is locked, Blueprints can no longer be added.
-        // A Set can never be changed from locked to unlocked,
-        // the decision to lock a Set it is final.
-        // Though Blueprints cannot be added to locked Sets,
-        // Creations can still be minted from Blueprints that exist in the Set.
-        pub var locked: Bool
-
+        
         // Array of blueprintIDs that are a part of this set.
         // When a blueprint is added to the set, its ID gets appended here.
         // The ID does not get removed from this array when a Blueprint is retired.
@@ -411,6 +348,15 @@ pub contract Blocksmith: NonFungibleToken {
         // When a Blueprint is added to a Set, it is mapped to false (not retired).
         // When a Blueprint is retired, this is set to true and cannot be changed.
         pub var retired: {UInt32: Bool}
+
+        // Indicates if the Set is currently locked.
+        // A Set starts unlocked and Blueprints are allowed to be added to it.
+        // When a Set is locked, Blueprints can no longer be added.
+        // A Set can never be changed from locked to unlocked,
+        // the decision to lock a Set it is final.
+        // Though Blueprints cannot be added to locked Sets,
+        // Creations can still be minted from Blueprints that exist in the Set.
+        pub var locked: Bool
 
         // Mapping of Blueprint IDs that indicates the number of Creations 
         // that have been minted for this Set.
@@ -473,17 +419,10 @@ pub contract Blocksmith: NonFungibleToken {
         pub let name: String
 
         // Series that this Set belongs to.
+        // Series is a concept that indicates a group of Sets through time.
+        // Many Sets can exist at a time, but only one series.
         pub let series: UInt32
         
-        // Indicates if the Set is currently locked.
-        // A Set starts unlocked and Blueprints are allowed to be added to it.
-        // When a Set is locked, Blueprints can no longer be added.
-        // A Set can never be changed from locked to unlocked,
-        // the decision to lock a Set it is final.
-        // Though Blueprints cannot be added to locked Sets,
-        // Creations can still be minted from Blueprints that exist in the Set.
-        pub var locked: Bool
-
         // Array of blueprintIDs that are a part of this set.
         // When a blueprint is added to the set, its ID gets appended here.
         // The ID does not get removed from this array when a Blueprint is retired.
@@ -493,9 +432,20 @@ pub contract Blocksmith: NonFungibleToken {
         // When a Blueprint is added to a Set, it is mapped to false (not retired).
         // When a Blueprint is retired, this is set to true and cannot be changed.
         pub var retired: {UInt32: Bool}
-        
+
+        // Indicates if the Set is currently locked.
+        // When a Set is created, it is unlocked 
+        // and Blueprints are allowed to be added to it.
+        // When a set is locked, Blueprints cannot be added.
+        // A Set can never be changed from locked to unlocked,
+        // the decision to lock a Set it is final.
+        // If a Set is locked, Blueprints cannot be added, but
+        // Creations can still be minted from Blueprints
+        // that exist in the Set.
+        pub var locked: Bool
+
         // Mapping of Blueprint IDs that indicates the number of Creations 
-        // that have been minted for this Set.
+        // that have been minted for specific Blueprints in this Set.
         // When a Creation is minted, this value is stored in the Creation to
         // show its place in the Set, eg. 13 of 60.
         pub var numberMintedPerBlueprint: {UInt32: UInt32}
@@ -506,10 +456,12 @@ pub contract Blocksmith: NonFungibleToken {
                 name.length > 0: "New Set name cannot be empty"
             }
 
+            let creator = Blocksmith.creators[creatorID]!
+
             self.creatorID = creatorID
-            self.setID =  Blocksmith.creators[creatorID]!.nextSetID
+            self.setID = creator.nextSetID
             self.name = name
-            self.series =  Blocksmith.creators[creatorID]!.currentSeries
+            self.series = creator.currentSeries
 
             self.blueprintIDs = []
             self.retired = {}
@@ -517,7 +469,7 @@ pub contract Blocksmith: NonFungibleToken {
             self.numberMintedPerBlueprint = {}
 
             // Increment the setID so that it isn't used again
-            Blocksmith.creators[creatorID]!.incrementNextSetID()
+            creator.incrementNextSetID()
 
             emit SetCreated(creatorID: creatorID, setID: self.setID, series: self.series)
         }
@@ -537,16 +489,8 @@ pub contract Blocksmith: NonFungibleToken {
                     "Cannot add the Blueprint to Set: Blueprint doesn't exist."
                 !self.locked: 
                     "Cannot add the blueprint to the Set after the set has been locked."
-                self.blueprintIDs[blueprintID] == nil: 
+                self.numberMintedPerBlueprint[blueprintID] == nil: 
                     "The blueprint has already beed added to the set."
-            }
-            post {
-                self.blueprintIDs[blueprintID] != nil: 
-                    "blueprint not created properly"
-                self.retired[blueprintID] == false:
-                    "The Set's retired map is not set to false"
-                self.numberMintedPerBlueprint[blueprintID] == 0:
-                    "The Set's number minted should start at 0"
             }
 
             // Add the Blueprint to the array of Blueprints
@@ -583,9 +527,6 @@ pub contract Blocksmith: NonFungibleToken {
             pre {
                 self.retired[blueprintID] != nil: "Cannot retire the Blueprint: Blueprint doesn't exist in this set!"
             }
-            post {
-                self.retired[blueprintID]!: "Blueprint should be retired in this set"
-            }
 
             if !self.retired[blueprintID]! {
                 self.retired[blueprintID] = true
@@ -613,11 +554,6 @@ pub contract Blocksmith: NonFungibleToken {
         // Pre-Conditions:
         // The Set should not be locked
         pub fun lock() {
-            post {
-                Blocksmith.isSetLocked(creatorID: self.creatorID, setID: self.setID)!:
-                    "set wasn't locked properly"
-            }
-
             if !self.locked {
                 self.locked = true
                 emit SetLocked(setID: self.setID)
@@ -727,6 +663,11 @@ pub contract Blocksmith: NonFungibleToken {
 
             Blocksmith.creators[creatorID]!.incrementNumCreations()
             let creationID = Blocksmith.creators[creatorID]!.numCreations
+            
+            let creatorGlobalIDMap = Blocksmith.creatorToGlobalIDMap[creatorID]!
+            creatorGlobalIDMap[creationID] = self.id
+            // seemed to not be updating the inner map without this
+            Blocksmith.creatorToGlobalIDMap[creatorID] = creatorGlobalIDMap
 
             // Set the metadata struct
             self.data = CreationData(
@@ -755,29 +696,127 @@ pub contract Blocksmith: NonFungibleToken {
     }
 
     // SuperAdmin is a special authorization resource that 
-    // allows the owner to onboard new Creators onto the contract
-    // and grant admin access to any creator through an AdminPubilc reference
+    // allows the owner to perform all the Admin functions
+    // and also onboard new Creators onto the contract
+    //
     pub resource SuperAdmin {
 
-        pub fun createCreator(creatorAddress: Address): UInt32 {
-            post {
-            Blocksmith.getCreator(creatorID: newCreatorID) != nil:
-                "Could not create the new creator"
-            Blocksmith.getCreator(creatorID: newCreatorID)!.creatorAddress == creatorAddress:
-                "Could not set the proper creatorAddress"
-            Blocksmith.nextCreatorID == newCreatorID + UInt32(1):
-                "Could not set the next creatorID"
-            }
-
-            var newCreator = Creator(creatorAddress: creatorAddress)
-            let newCreatorID = newCreator.creatorID
-            Blocksmith.creators[newCreatorID] = newCreator
+        pub fun createCreator(): UInt32 {
+            var newCreator = Creator()
+            Blocksmith.creators[newCreator.creatorID] = newCreator
 
             return newCreator.creatorID
         }
 
-        pub fun addCreatorIDsToAdmin(creatorIDs: [UInt32], adminRef: &{AdminPublic}) {
-            adminRef.addCreatorAccess(creatorIDs: creatorIDs)
+        pub fun addCreatorIDsToAdmin(creatorIDs: [UInt32], admin: @Admin): @Admin {
+            admin.addCreatorAccess(creatorIDs: creatorIDs)
+
+            return <- admin
+        }
+
+        pub fun removeCreatorIDsFromAdmin(creatorIDs: [UInt32], admin: @Admin): @Admin {
+            admin.removeCreatorAccess(creatorIDs: creatorIDs)
+
+            return <- admin
+        }
+
+        // createBlueprint creates a new Blueprint struct 
+        // and stores it in the Blueprints dictionary in the Blocksmith smart contract
+        //
+        // Parameters: metadata: A dictionary mapping metadata titles to their data
+        //                       example: {"Name": "John Doe", "Height": "6 feet"}
+        //
+        // Returns: the ID of the new Blueprint object
+        //
+        pub fun createBlueprint(creatorID: UInt32, metadata: {String: String}, creationLimit: UInt32?): UInt32 {
+            pre {
+                Blocksmith.creators[creatorID] != nil: "Cannot create Blueprint: Creator does not exist"
+            }
+            // Create the new Blueprint
+            var newBlueprint = Blueprint(creatorID: creatorID, metadata: metadata, creationLimit: creationLimit)
+            let newID = newBlueprint.blueprintID
+
+            // Store it in the contract storage
+            Blocksmith.creators[creatorID]!.addBlueprint(blueprintID: newID, blueprint: newBlueprint)
+
+            return newID
+        }
+
+        // createSet creates a new Set resource and stores it
+        // in the sets mapping in the Blocksmith contract
+        //
+        // Parameters: name: The name of the Set
+        //
+        pub fun createSet(creatorID: UInt32, name: String) {
+            pre {
+                Blocksmith.creators[creatorID] != nil: "Cannot create Set: Creator does not exist"
+            }
+
+            // Create the new Set
+            var newSet <- create Set(creatorID: creatorID, name: name)
+
+            // Store it in the sets mapping field
+            let creatorSets <- Blocksmith.sets.remove(key: creatorID)!
+            creatorSets[newSet.setID] <-! newSet
+            
+            Blocksmith.sets[creatorID] <-! creatorSets
+        }
+
+        // borrowSet returns a reference to a set in the Blocksmith
+        // contract so that the admin can call methods on it
+        //
+        // Parameters: setID: The ID of the Set that you want to
+        // get a reference to
+        //
+        // Returns: A reference to the Set with all of the fields
+        // and methods exposed
+        //
+        pub fun borrowSet(creatorID: UInt32, setID: UInt32): &Set {
+            pre {
+                Blocksmith.creators[creatorID] != nil: "Cannot borrow Set: The Creator doesn't exist"
+            }
+            
+            let creatorSets <- Blocksmith.sets.remove(key: creatorID)!
+
+            if creatorSets[setID] == nil {
+                panic("Cannot borrow Set: The Set doesn't exist")
+            }
+
+            // Get a reference to the Set and return it
+            // use `&` to indicate the reference to the object and type
+            let reference: &Set = &creatorSets[setID] as &Set
+            
+            Blocksmith.sets[creatorID] <-! creatorSets
+
+            return reference
+        }
+
+        // startNewSeries ends the current series by incrementing
+        // the series number, meaning that Creations minted after this
+        // will use the new series number
+        //
+        // Returns: The new series number
+        //
+        pub fun startNewSeries(creatorID: UInt32): UInt32 {
+            pre {
+                Blocksmith.creators[creatorID] != nil: "Cannot start series: The Creator doesn't exist"
+            }
+
+            // End the current series and start a new one
+            // by incrementing the Blocksmith series number
+            Blocksmith.creators[creatorID]!.incrementCurrentSeries()
+
+            let currentSeries = Blocksmith.creators[creatorID]!.currentSeries
+
+            emit NewSeriesStarted(creatorID: creatorID, newCurrentSeries: currentSeries)
+
+            return currentSeries
+        }
+
+        // createNewAdmin creates a new Admin resource with a subset of the creatorIDs
+        //
+        pub fun createNewAdmin(creatorAccess: {UInt32: Bool}): @Admin {
+            return <-create Admin(creatorAccess: creatorAccess)
         }
 
         pub fun createNewSuperAdmin(): @SuperAdmin {
@@ -785,53 +824,17 @@ pub contract Blocksmith: NonFungibleToken {
         }
     }
 
-    // This is the interface that allows Admins to give 
-    // another wallet admin priviledges on a creator.
-    // Once given these priviledges cannot be revoked, even by a superAdmin
-    pub resource interface AdminPublic {
-
-        // Admins can only perform actions on Creators with ids in this list
-        pub fun getCreatorAccess(): {UInt32: Bool}
-
-        // SuperAdmin resource is required to ensure extender has the proper 
-        access(contract) fun addCreatorAccess(creatorIDs: [UInt32])
-        // Admin resource is required to ensure extender has the proper 
-        // admin permission to extend creator Access
-        pub fun extendCreatorAccess(creatorID: UInt32, extender: &Admin)
-        pub fun extendCreatorsAccess(creatorIDs: [UInt32], extender: &Admin)
-    }
-
     // Admin is a special authorization resource that 
     // allows the creator to perform important functions to modify the 
     // various aspects of the Blueprints, Sets, and Creations for some creators
     //
-    pub resource Admin: AdminPublic {
+    pub resource Admin {
 
         // Admins can only perform actions on Creators with ids in this list
         // SuperAdmins can change which creatorIDs an Admin can modify
-        access(self) var creatorAccess: {UInt32: Bool}
+        pub var creatorAccess: {UInt32: Bool}
 
-        init(creatorAccess: {UInt32: Bool}?) {
-            self.creatorAccess = creatorAccess ?? {}
-        }
-
-        pub fun getCreatorAccess(): {UInt32: Bool} {
-            return self.creatorAccess
-        }
-
-
-        pub fun updateCreatorMetadata(creatorID: UInt32, metadata: {String: String}) {
-            pre {
-                Blocksmith.creators[creatorID] != nil: 
-                    "Cannot create Blueprint: Creator does not exist"
-                // false if the value is false or if the key does not exist
-                self.creatorAccess[creatorID] ?? false: 
-                    "Unable to modify anything for this Creator"
-            }
-
-             Blocksmith.creators[creatorID]!.updateMetadata(updatedData: metadata)
-        }
-
+        
         // createBlueprint creates a new Blueprint struct 
         // and stores it in the Blueprints dictionary in the Blocksmith smart contract
         //
@@ -848,13 +851,6 @@ pub contract Blocksmith: NonFungibleToken {
                 self.creatorAccess[creatorID] ?? false: 
                     "Unable to modify anything for this Creator"
             }
-            post {
-                Blocksmith.creators[creatorID]!.nextBlueprintID == newID + UInt32(1):
-                    "Creator not set up for next blueprint"
-                Blocksmith.getBlueprintMetaData(creatorID: creatorID, blueprintID: newID) != nil:
-                    "Blueprint wasn't saved properly"
-            }
-
             // Create the new Blueprint
             var newBlueprint = Blueprint(creatorID: creatorID, metadata: metadata, creationLimit: creationLimit)
             let newID = newBlueprint.blueprintID
@@ -877,19 +873,13 @@ pub contract Blocksmith: NonFungibleToken {
                 self.creatorAccess[creatorID] ?? false: 
                     "Unable to modify anything for this Creator"
             }
-            post {
-                Blocksmith.getSetName(creatorID: creatorID, setID: newSetID) == name:
-                    "New set does not have the right name"
-                Blocksmith.creators[creatorID]!.nextSetID == newSetID + UInt32(1):
-                    "Did not increment nextSetID properly"
-            }
 
             // Create the new Set
             var newSet <- create Set(creatorID: creatorID, name: name)
-            let newSetID = newSet.setID
+
             // Store it in the sets mapping field
             let creatorSets <- Blocksmith.sets.remove(key: creatorID)!
-            creatorSets[newSetID] <-! newSet
+            creatorSets[newSet.setID] <-! newSet
             
             Blocksmith.sets[creatorID] <-! creatorSets
         }
@@ -951,38 +941,34 @@ pub contract Blocksmith: NonFungibleToken {
             return currentSeries
         }
 
-        // Admin can remove their own access over a creator if they want
-        pub fun removeCreatorAccess(creatorIDs: [UInt32]) {
-            for creatorID in creatorIDs {
-                self.creatorAccess[creatorID] = false
+        // createNewAdmin creates a new Admin resource with a subset of the creatorIDs
+        //
+        pub fun createNewAdmin(creatorAccess: {UInt32: Bool}): @Admin {
+            var subCreatorAccess: {UInt32: Bool} = {}
+
+            for creatorID in creatorAccess.keys {
+                if self.creatorAccess[creatorID] != nil {
+                    subCreatorAccess[creatorID] = creatorAccess[creatorID]!
+                }
             }
+
+            return <-create Admin(creatorAccess: subCreatorAccess)
         }
 
-        // This is contract access so that only the SuperAdmin resource
-        // can grant admin access for other creators
         access(contract) fun addCreatorAccess(creatorIDs: [UInt32]) {
             for creatorID in creatorIDs {
                 self.creatorAccess[creatorID] = true
             }
         }
-        
-        // These methods are mostly for Admins with more 
-        pub fun extendCreatorAccess(creatorID: UInt32, extender: &Admin) {
-            pre {
-                extender.creatorAccess[creatorID] ?? false:
-                    "Provided Admin resource does not have access for this creator"
+
+        access(contract) fun removeCreatorAccess(creatorIDs: [UInt32]) {
+            for creatorID in creatorIDs {
+                self.creatorAccess[creatorID] = false
             }
-            self.creatorAccess[creatorID] = extender.creatorAccess[creatorID]!
         }
 
-        pub fun extendCreatorsAccess(creatorIDs: [UInt32], extender: &Admin) {
-            for creatorID in creatorIDs {
-                if extender.creatorAccess[creatorID] ?? false {
-                    panic("Provided Admin resource does not have access for these creators")
-                }
-
-                self.creatorAccess[creatorID] = extender.creatorAccess[creatorID]!
-            }
+        init(creatorAccess: {UInt32: Bool}) {
+            self.creatorAccess = creatorAccess
         }
     }
 
@@ -993,6 +979,8 @@ pub contract Blocksmith: NonFungibleToken {
         pub fun deposit(token: @NonFungibleToken.NFT)
         pub fun batchDeposit(tokens: @NonFungibleToken.Collection)
         pub fun getIDs(): [UInt64]
+        pub fun getIDsByCreator(creatorID: UInt32): [UInt64]
+        pub fun getIDsByCreators(creatorIDs: [UInt32]): [UInt64]
         pub fun borrowNFT(id: UInt64): &NonFungibleToken.NFT
 
         // This id is the global UInt64 ID which is unique across ALL Creators
@@ -1001,6 +989,16 @@ pub contract Blocksmith: NonFungibleToken {
             // should be the same as the argument to the function
             post {
                 (result == nil) || (result?.id == id): 
+                    "Cannot borrow Creation reference: The ID of the returned reference is incorrect"
+            }
+        }
+
+        // This id is a UInt32 ID which is unique across a given creator
+        pub fun borrowCreatorCreation(creatorID: UInt32, creationID: UInt32): &Blocksmith.NFT? {
+            // If the result isn't nil, the id of the returned reference
+            // should be the same as the argument to the function
+            post {
+                (result == nil): 
                     "Cannot borrow Creation reference: The ID of the returned reference is incorrect"
             }
         }
@@ -1103,6 +1101,28 @@ pub contract Blocksmith: NonFungibleToken {
             return self.ownedNFTs.keys
         }
 
+        // returns an array of global IDs for the creations a user 
+        // owns that come from a given creatorID
+        pub fun getIDsByCreator(creatorID: UInt32): [UInt64] {
+            pre {
+                Blocksmith.creatorToGlobalIDMap[creatorID] != nil: 
+                    "This creator does not have a global mapping"
+            }
+
+            let creatorGlobalIDMap = Blocksmith.creatorToGlobalIDMap[creatorID]!
+            return creatorGlobalIDMap.values
+        }
+
+
+        pub fun getIDsByCreators(creatorIDs: [UInt32]): [UInt64] {
+            var globalIDs: [UInt64] = []
+            for creatorID in creatorIDs {
+                globalIDs.appendAll(self.getIDsByCreator(creatorID: creatorID))
+            }
+
+            return globalIDs
+        }
+
         // borrowNFT Returns a borrowed reference to a Creation in the Collection
         // so that the caller can read its ID
         //
@@ -1133,8 +1153,25 @@ pub contract Blocksmith: NonFungibleToken {
             }
         }
 
+        // This id is a UInt32 ID which is unique across a given creator
+        pub fun borrowCreatorCreation(creatorID: UInt32, creationID: UInt32): &Blocksmith.NFT? {
+            pre {
+                Blocksmith.creatorToGlobalIDMap[creatorID] != nil: 
+                    "This creator does not have a global mapping"
+            }
+
+            let creatorGlobalIDMap = Blocksmith.creatorToGlobalIDMap[creatorID]!
+
+            if let globalID = creatorGlobalIDMap[creationID] {
+                return self.borrowCreation(id: globalID)
+            } else {
+                return nil
+            }
+        }
+
         // If a transaction destroys the Collection object,
         // All the NFTs contained within are also destroyed!
+        //
         destroy() {
             destroy self.ownedNFTs
         }
@@ -1148,21 +1185,11 @@ pub contract Blocksmith: NonFungibleToken {
     // a user can store it in their account storage.
     // Once they have a Collection in their storage, they are able to receive
     // Creations in transactions.
+    //
     pub fun createEmptyCollection(): @NonFungibleToken.Collection {
         return <-create Blocksmith.Collection()
     }
 
-    // createEmptyAdmin creates a new, Admin object that a user can store 
-    // in their account storage. It initally has access to no creator accounts,
-    // and the user must make a public capability to allow existing Admins
-    // or SuperAdmins to extend their admin capability.
-    pub fun createEmptyAdmin(): @Blocksmith.Admin {
-        return <-create Blocksmith.Admin(nil)
-    }
-
-    // getCreator returns all data related to a Creator struct
-    //
-    // Returns: An optional of a Creator struct if the creatorID exists
     pub fun getCreator(creatorID: UInt32): Blocksmith.Creator? {
         return Blocksmith.creators[creatorID]
     }
@@ -1176,18 +1203,6 @@ pub contract Blocksmith: NonFungibleToken {
         }
 
         return Blocksmith.creators[creatorID]!.getBlueprints()
-    }
-
-    // getBlueprint returns an optional which is either the blueprint
-    // with that id for the creator or empty if it doesn't exist
-    //
-    // Returns: An option the blueprint with that ID
-    pub fun getBlueprint(creatorID: UInt32, blueprintID: UInt32): Blocksmith.Blueprint? {
-        pre {
-            Blocksmith.creators[creatorID] != nil: "Creator must exist to get blueprints"
-        }
-
-        return Blocksmith.creators[creatorID]!.getBlueprint(blueprintID: blueprintID)
     }
 
     // getBlueprintMetaData returns all the metadata associated with a specific Blueprint
@@ -1254,10 +1269,12 @@ pub contract Blocksmith: NonFungibleToken {
             Blocksmith.sets[creatorID] != nil: "Creator must exist to get blueprints"
         }
 
+        var series: UInt32? = nil
         let creatorSets <- Blocksmith.sets.remove(key: creatorID)!
         
         // Don't force a revert if the setID is invalid
-        let series = creatorSets[setID]?.series
+        series = creatorSets[setID]?.series
+
         Blocksmith.sets[creatorID] <-! creatorSets
 
         return series
@@ -1273,10 +1290,12 @@ pub contract Blocksmith: NonFungibleToken {
             Blocksmith.sets[creatorID] != nil: "Creator must exist to get blueprints"
         }
 
+        var blueprintIDs: [UInt32]? = nil
         let creatorSets <- Blocksmith.sets.remove(key: creatorID)!
         
         // Don't force a revert if the setID is invalid
-        let blueprintIDs = creatorSets[setID]?.blueprintIDs
+        blueprintIDs = creatorSets[setID]?.blueprintIDs
+
         Blocksmith.sets[creatorID] <-! creatorSets
 
         return blueprintIDs
@@ -1329,10 +1348,12 @@ pub contract Blocksmith: NonFungibleToken {
             Blocksmith.sets[creatorID] != nil: "Creator must exist to get blueprints"
         }
 
+        var locked: Bool? = nil
         let creatorSets <- Blocksmith.sets.remove(key: creatorID)!
         
         // Don't force a revert if the setID is invalid
-        let locked = creatorSets[setID]?.locked
+        locked = creatorSets[setID]?.locked
+
         Blocksmith.sets[creatorID] <-! creatorSets
 
         return locked
@@ -1387,4 +1408,36 @@ pub contract Blocksmith: NonFungibleToken {
         // (it checks it before returning it).
         return collection.borrowCreation(id: globalCreationID)
     }
+
+    // -----------------------------------------------------------------------
+    // Blocksmith initialization function
+    // -----------------------------------------------------------------------
+    //
+    init() {
+        // Set our named paths
+        self.CollectionStoragePath = /storage/BlocksmithCreationCollection
+        self.CollectionPublicPath = /public/BlocksmithCreationCollection
+        self.SuperAdminStoragePath = /storage/BlocksmithSuperAdmin
+        self.AdminStoragePath = /storage/BlocksmithAdmin
+
+        // Initialize contract fields
+        self.creators = {}
+        self.sets <- {}
+        self.creatorToGlobalIDMap = {}
+        self.totalSupply = 0
+        self.nextCreatorID = 1
+
+        // Put a new Collection in storage
+        self.account.save<@Collection>(<- create Collection(), to: self.CollectionStoragePath)
+
+        // Create a public capability for the Collection
+        self.account.link<&{CreationCollectionPublic}>(self.CollectionPublicPath, target: self.CollectionStoragePath)
+
+        // Put the SuperAdmin in storage
+        self.account.save<@SuperAdmin>(<- create SuperAdmin(), to: self.SuperAdminStoragePath)
+
+        emit ContractInitialized()
+    }
 }
+
+

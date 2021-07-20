@@ -13,15 +13,13 @@ transaction(creatorID: UInt32, setID: UInt32, blueprintIDs: [UInt32]) {
     // Local variable for the Blocksmith Admin object
     let adminRef: &Blocksmith.Admin
 
-    prepare(acct: AuthAccount) {
-
+    prepare(adminAcct: AuthAccount) {
         // borrow a reference to the admin resource
-        self.adminRef = acct.borrow<&Blocksmith.Admin>(from: Blocksmith.AdminStoragePath)
+        self.adminRef = adminAcct.borrow<&Blocksmith.Admin>(from: Blocksmith.AdminStoragePath)
             ?? panic("No admin resource in storage")
     }
 
     execute {
-
         // borrow a reference to the set to be added to
         let setRef = self.adminRef.borrowSet(creatorID: creatorID, setID: setID)
 
