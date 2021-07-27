@@ -21,7 +21,7 @@ transaction(creatorID: UInt32, recipientAddress: Address) {
     }
 
     execute {
-        let metadata = {"name": "Squirtle", "type": "water"}
+        let metadata = {"name": "Jigglypuff", "type": "normal"}
         let setName = "Pokemon Yellow"
         let creationLimit: UInt32? = 10
 

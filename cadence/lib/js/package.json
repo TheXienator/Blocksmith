@@ -1,0 +1,30 @@
+{
+  "name": "blocksmith-cadence-testing",
+  "version": "0.0.1",
+  "description": "Integration tests for Blocksmith using Flow JS Testing Framework",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TheXienator/Blocksmith.git"
+  },
+  "author": "Jason Xie",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/TheXienator/Blocksmith/issues"
+  },
+  "homepage": "https://github.com/TheXienator/Blocksmith/tree/main/cadence#readme",
+  "dependencies": {
+    "@babel/core": "^7.14.8",
+    "@babel/preset-env": "^7.14.8",
+    "@onflow/fcl": "^0.0.73",
+    "@onflow/types": "^0.0.4",
+    "@types/jest": "^26.0.24",
+    "@types/node": "^16.4.1",
+    "babel-jest": "^27.0.6",
+    "flow-js-testing": "^0.1.12",
+    "jest": "^27.0.6"
+  }
+}

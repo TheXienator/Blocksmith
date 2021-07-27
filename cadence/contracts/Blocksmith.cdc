@@ -48,7 +48,7 @@ pub contract Blocksmith: NonFungibleToken {
     pub event ContractInitialized()
 
     // Emitted when a new Creator is added to the contract
-    pub event CreatorCreated(creatorID: UInt32)
+    pub event CreatorCreated(creatorID: UInt32, creatorAddress: Address)
 
     // Emitted when a new Blueprint struct is created
     pub event BlueprintCreated(creatorID: UInt32, blueprintID: UInt32, metadata: {String: String})
@@ -144,6 +144,12 @@ pub contract Blocksmith: NonFungibleToken {
         // Create a public capability for the Collection
         self.account.link<&{CreationCollectionPublic}>(self.CollectionPublicPath, target: self.CollectionStoragePath)
 
+        // Put a new Admin Resource in storage
+        self.account.save<@Admin>(<- create Admin(creatorAccess: {}), to: self.AdminStoragePath)
+
+        // Create a public capability for the Collection
+        self.account.link<&{AdminPublic}>(self.AdminPublicPath, target: self.AdminStoragePath)
+
         // Uncomment if we need to hard reset during testing
         // if (self.account.borrow<&SuperAdmin>(from: self.SuperAdminStoragePath) != nil) {
         //     destroy self.account.load<@SuperAdmin>(from: self.SuperAdminStoragePath)
@@ -169,9 +175,6 @@ pub contract Blocksmith: NonFungibleToken {
         // to give original creators a cut of secondary marketplaces.
         pub let creatorAddress: Address
 
-        // Metadata related to a creator that can be changed at any time
-        pub var creatorMetadata: {String: String}
-
         // Series is a concept that indicates a group of Sets through time.
         pub var currentSeries: UInt32
 
@@ -189,6 +192,9 @@ pub contract Blocksmith: NonFungibleToken {
         // reflects the total number of NFTs for this Creator in existence, just the number that
         // have been minted to date. Also used as creation IDs for minting.
         pub var numCreations: UInt32
+
+        // Metadata related to a creator that can be changed at any time
+        access(self) var creatorMetadata: {String: String}
 
         // Variable size dictionary of Blueprint structs
         access(self) var blueprints: {UInt32: Blueprint}
@@ -210,7 +216,7 @@ pub contract Blocksmith: NonFungibleToken {
             // Setup global resources for the new creator
             Blocksmith.sets[self.creatorID] <-! {}
 
-            emit CreatorCreated(creatorID: self.creatorID)
+            emit CreatorCreated(creatorID: self.creatorID, creatorAddress: creatorAddress)
         }
 
         // method an admin can use at any time to update creator metadata
@@ -360,6 +366,7 @@ pub contract Blocksmith: NonFungibleToken {
             return self.creationCount < self.creationLimit
         }
 
+        // Also returns if this is the last creation for this Blueprint
         pub fun incrementCreationCount() {
             pre {
                 self.canMint(): "This Blueprint has reached its creation limit"
@@ -537,11 +544,11 @@ pub contract Blocksmith: NonFungibleToken {
                     "Cannot add the Blueprint to Set: Blueprint doesn't exist."
                 !self.locked: 
                     "Cannot add the blueprint to the Set after the set has been locked."
-                self.blueprintIDs[blueprintID] == nil: 
+                !self.blueprintIDs.contains(blueprintID): 
                     "The blueprint has already beed added to the set."
             }
             post {
-                self.blueprintIDs[blueprintID] != nil: 
+                self.blueprintIDs.contains(blueprintID): 
                     "blueprint not created properly"
                 self.retired[blueprintID] == false:
                     "The Set's retired map is not set to false"
@@ -761,12 +768,12 @@ pub contract Blocksmith: NonFungibleToken {
 
         pub fun createCreator(creatorAddress: Address): UInt32 {
             post {
-            Blocksmith.getCreator(creatorID: newCreatorID) != nil:
-                "Could not create the new creator"
-            Blocksmith.getCreator(creatorID: newCreatorID)!.creatorAddress == creatorAddress:
-                "Could not set the proper creatorAddress"
-            Blocksmith.nextCreatorID == newCreatorID + UInt32(1):
-                "Could not set the next creatorID"
+                Blocksmith.getCreator(creatorID: newCreatorID) != nil:
+                    "Could not create the new creator"
+                Blocksmith.getCreator(creatorID: newCreatorID)!.creatorAddress == creatorAddress:
+                    "Could not set the proper creatorAddress"
+                Blocksmith.nextCreatorID == newCreatorID + UInt32(1):
+                    "Could not set the next creatorID"
             }
 
             var newCreator = Creator(creatorAddress: creatorAddress)
@@ -819,7 +826,6 @@ pub contract Blocksmith: NonFungibleToken {
             return self.creatorAccess
         }
 
-
         pub fun updateCreatorMetadata(creatorID: UInt32, metadata: {String: String}) {
             pre {
                 Blocksmith.creators[creatorID] != nil: 
@@ -829,7 +835,7 @@ pub contract Blocksmith: NonFungibleToken {
                     "Unable to modify anything for this Creator"
             }
 
-             Blocksmith.creators[creatorID]!.updateMetadata(updatedData: metadata)
+            Blocksmith.creators[creatorID]!.updateMetadata(updatedData: metadata)
         }
 
         // createBlueprint creates a new Blueprint struct 
@@ -962,6 +968,9 @@ pub contract Blocksmith: NonFungibleToken {
         // can grant admin access for other creators
         access(contract) fun addCreatorAccess(creatorIDs: [UInt32]) {
             for creatorID in creatorIDs {
+                if (Blocksmith.creators[creatorID] == nil) {
+                    panic("Cannot give access to a creator that doesn't exist")
+                }
                 self.creatorAccess[creatorID] = true
             }
         }

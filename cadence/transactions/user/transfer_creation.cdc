@@ -1,4 +1,4 @@
-import NonFungibleToken from "../../contracts/standard/NonFungibleToken.cdc"
+import NonFungibleToken from "../../contracts/NonFungibleToken.cdc"
 import Blocksmith from "../../contracts/Blocksmith.cdc"
 
 // This transaction transfers a creation to a recipient

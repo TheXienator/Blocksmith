@@ -8,7 +8,7 @@
 	"contracts": {
 		"Blocksmith": "./contracts/Blocksmith.cdc",
 		"NonFungibleToken": {
-			"source": "./contracts/standard/NonFungibleToken.cdc",
+			"source": "./contracts/NonFungibleToken.cdc",
 			"aliases": {
 				"testnet": "0x631e88ae7f1d7c20"
 			}
@@ -29,9 +29,9 @@
 		}
 	},
 	"accounts": {
-		"emulator-account": {
-			"address": "0xf8d6e0586b0a20c7",
-			"keys": "f28ebd16a94d7e7a18301829383f9b356e7c43dd05fddef202a168b59ea7f2fc",
+		"emulator-account": {	
+			"address": "f8d6e0586b0a20c7",
+			"key": "e5138b29768681de6eabc5fb376e6270c3ace17275e9be7d2b3380201d11336e",
 			"chain": "flow-emulator"
 		},
 		"testnet-account": { 
